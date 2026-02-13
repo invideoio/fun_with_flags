@@ -22,45 +22,42 @@ defmodule FunWithFlags.Store.Persistent do
   `child_spec/1` _must_ return a valid child spec map.
   """
   @callback worker_spec() ::
-              Supervisor.child_spec
+              Supervisor.child_spec()
               | nil
-
 
   @doc """
   Retrieves a flag by name.
   """
   @callback get(flag_name :: atom) ::
-              {:ok, FunWithFlags.Flag.t}
+              {:ok, FunWithFlags.Flag.t()}
               | {:error, any()}
 
   @doc """
   Persists a gate for a flag, identified by name.
   """
-  @callback put(flag_name :: atom, gate :: FunWithFlags.Gate.t) ::
-              {:ok, FunWithFlags.Flag.t}
+  @callback put(flag_name :: atom, gate :: FunWithFlags.Gate.t()) ::
+              {:ok, FunWithFlags.Flag.t()}
               | {:error, any()}
 
   @doc """
   Deletes a gate from a flag, identified by name.
   """
-  @callback delete(flag_name :: atom, gate :: FunWithFlags.Gate.t) ::
-              {:ok, FunWithFlags.Flag.t}
+  @callback delete(flag_name :: atom, gate :: FunWithFlags.Gate.t()) ::
+              {:ok, FunWithFlags.Flag.t()}
               | {:error, any()}
-
 
   @doc """
   Deletes an entire flag, identified by name.
   """
   @callback delete(flag_name :: atom) ::
-              {:ok, FunWithFlags.Flag.t}
+              {:ok, FunWithFlags.Flag.t()}
               | {:error, any()}
-
 
   @doc """
   Retrieves all the persisted flags.
   """
   @callback all_flags() ::
-              {:ok, [FunWithFlags.Flag.t]}
+              {:ok, [FunWithFlags.Flag.t()]}
               | {:error, any()}
 
   @doc """
@@ -69,4 +66,24 @@ defmodule FunWithFlags.Store.Persistent do
   @callback all_flag_names() ::
               {:ok, [atom]}
               | {:error, any()}
+
+  @doc """
+  Deletes all persisted flags atomically.
+
+  Returns `{:ok, count}` where count is the number of flags deleted,
+  or `{:error, reason}` on failure.
+  """
+  @callback delete_all() :: {:ok, non_neg_integer()} | {:error, any()}
+
+  @doc """
+  Persists multiple flags atomically.
+
+  Takes a list of tuples where each tuple contains a flag name (atom) and
+  a list of gates for that flag. All flags are persisted in a single atomic
+  operation. Existing flags with the same names will be overwritten.
+
+  Returns `{:ok, [Flag.t()]}` on success or `{:error, reason}` on failure.
+  """
+  @callback put_many([{flag_name :: atom(), [FunWithFlags.Gate.t()]}]) ::
+              {:ok, [FunWithFlags.Flag.t()]} | {:error, any()}
 end

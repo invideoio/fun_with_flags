@@ -7,16 +7,14 @@ defmodule FunWithFlags.Flag do
 
   alias FunWithFlags.Gate
 
-  defstruct [name: nil, gates: []]
-  @type t :: %FunWithFlags.Flag{name: atom, gates: [FunWithFlags.Gate.t]}
-  @typep options :: Keyword.t
-
+  defstruct name: nil, gates: []
+  @type t :: %FunWithFlags.Flag{name: atom, gates: [FunWithFlags.Gate.t()]}
+  @typep options :: Keyword.t()
 
   @doc false
   def new(name, gates \\ []) when is_atom(name) do
     %__MODULE__{name: name, gates: gates}
   end
-
 
   @doc false
   @spec enabled?(t, options) :: boolean
@@ -33,43 +31,44 @@ defmodule FunWithFlags.Flag do
     check_boolean_gate(gates) || check_percentage_of_time_gate(gates)
   end
 
-
-  def enabled?(%__MODULE__{gates: gates, name: flag_name}, [for: item]) do
+  def enabled?(%__MODULE__{gates: gates, name: flag_name}, for: item) do
     case check_actor_gates(gates, item) do
-      {:ok, bool} -> bool
+      {:ok, bool} ->
+        bool
+
       :ignore ->
         case check_group_gates(gates, item) do
-          {:ok, bool} -> bool
+          {:ok, bool} ->
+            bool
+
           :ignore ->
             check_boolean_gate(gates) || check_percentage_gate(gates, item, flag_name)
         end
     end
   end
 
-
   defp check_percentage_gate(gates, item, flag_name) do
     case percentage_of_actors_gate(gates) do
       nil ->
         check_percentage_of_time_gate(gates)
+
       gate ->
         check_percentage_of_actors_gate(gate, item, flag_name)
     end
   end
-
 
   defp check_actor_gates([], _), do: :ignore
 
   defp check_actor_gates([%Gate{type: :actor} = gate | rest], item) do
     case Gate.enabled?(gate, for: item) do
       :ignore -> check_actor_gates(rest, item)
-      result  -> result
+      result -> result
     end
   end
 
   defp check_actor_gates([_gate | rest], item) do
     check_actor_gates(rest, item)
   end
-
 
   # If the tested item belongs to multiple conflicting groups,
   # the disabled ones take precedence. Guaranteeing that something
@@ -83,11 +82,11 @@ defmodule FunWithFlags.Flag do
 
   defp check_group_gates([], _, result), do: result
 
-  defp check_group_gates([%Gate{type: :group} = gate|rest], item, temp_result) do
+  defp check_group_gates([%Gate{type: :group} = gate | rest], item, temp_result) do
     case Gate.enabled?(gate, for: item) do
-      :ignore      -> check_group_gates(rest, item, temp_result)
+      :ignore -> check_group_gates(rest, item, temp_result)
       {:ok, false} -> {:ok, false}
-      {:ok, true}  -> check_group_gates(rest, item, {:ok, true})
+      {:ok, true} -> check_group_gates(rest, item, {:ok, true})
     end
   end
 
@@ -95,9 +94,9 @@ defmodule FunWithFlags.Flag do
     check_group_gates(rest, item, temp_result)
   end
 
-
   defp check_boolean_gate(gates) do
     gate = boolean_gate(gates)
+
     if gate do
       {:ok, bool} = Gate.enabled?(gate)
       bool
@@ -105,10 +104,10 @@ defmodule FunWithFlags.Flag do
       false
     end
   end
-
 
   defp check_percentage_of_time_gate(gates) do
     gate = percentage_of_time_gate(gates)
+
     if gate do
       {:ok, bool} = Gate.enabled?(gate)
       bool
@@ -116,13 +115,11 @@ defmodule FunWithFlags.Flag do
       false
     end
   end
-
 
   defp check_percentage_of_actors_gate(gate, item, flag_name) do
     {:ok, bool} = Gate.enabled?(gate, for: item, flag_name: flag_name)
     bool
   end
-
 
   defp boolean_gate(gates) do
     Enum.find(gates, &Gate.boolean?/1)

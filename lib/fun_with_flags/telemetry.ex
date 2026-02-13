@@ -96,15 +96,15 @@ defmodule FunWithFlags.Telemetry do
   #
   @doc false
   @spec emit_persistence_event(
-    pipelining_value(),
-    event_name :: atom(),
-    flag_name :: (atom() | nil),
-    gate :: (FunWithFlags.Gate.t | nil)
-  ) :: pipelining_value()
+          pipelining_value(),
+          event_name :: atom(),
+          flag_name :: atom() | nil,
+          gate :: FunWithFlags.Gate.t() | nil
+        ) :: pipelining_value()
   def emit_persistence_event(result = {:ok, _}, event_name, flag_name, gate) do
     metadata = %{
       flag_name: flag_name,
-      gate: gate,
+      gate: gate
     }
 
     do_send_event([:fun_with_flags, :persistence, event_name], metadata)
@@ -137,7 +137,6 @@ defmodule FunWithFlags.Telemetry do
     :telemetry.execute(event_name, measurements, metadata)
   end
 
-
   @doc """
   Attach a debug handler to FunWithFlags telemetry events.
 
@@ -155,14 +154,19 @@ defmodule FunWithFlags.Telemetry do
       [:fun_with_flags, :persistence, :delete_flag],
       [:fun_with_flags, :persistence, :delete_gate],
       [:fun_with_flags, :persistence, :reload],
-      [:fun_with_flags, :persistence, :error],
+      [:fun_with_flags, :persistence, :error]
     ]
 
     :telemetry.attach_many("local-debug-handler", events, &__MODULE__.debug_event_handler/4, %{})
   end
 
   @doc false
-  def debug_event_handler([:fun_with_flags, :persistence, event], %{system_time: system_time}, metadata, _config) do
+  def debug_event_handler(
+        [:fun_with_flags, :persistence, event],
+        %{system_time: system_time},
+        metadata,
+        _config
+      ) do
     dt = DateTime.from_unix!(system_time, :native) |> DateTime.to_iso8601()
 
     Logger.alert(fn ->
