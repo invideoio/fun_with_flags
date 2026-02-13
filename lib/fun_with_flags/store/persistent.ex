@@ -22,42 +22,45 @@ defmodule FunWithFlags.Store.Persistent do
   `child_spec/1` _must_ return a valid child spec map.
   """
   @callback worker_spec() ::
-              Supervisor.child_spec()
+              Supervisor.child_spec
               | nil
+
 
   @doc """
   Retrieves a flag by name.
   """
   @callback get(flag_name :: atom) ::
-              {:ok, FunWithFlags.Flag.t()}
+              {:ok, FunWithFlags.Flag.t}
               | {:error, any()}
 
   @doc """
   Persists a gate for a flag, identified by name.
   """
-  @callback put(flag_name :: atom, gate :: FunWithFlags.Gate.t()) ::
-              {:ok, FunWithFlags.Flag.t()}
+  @callback put(flag_name :: atom, gate :: FunWithFlags.Gate.t) ::
+              {:ok, FunWithFlags.Flag.t}
               | {:error, any()}
 
   @doc """
   Deletes a gate from a flag, identified by name.
   """
-  @callback delete(flag_name :: atom, gate :: FunWithFlags.Gate.t()) ::
-              {:ok, FunWithFlags.Flag.t()}
+  @callback delete(flag_name :: atom, gate :: FunWithFlags.Gate.t) ::
+              {:ok, FunWithFlags.Flag.t}
               | {:error, any()}
+
 
   @doc """
   Deletes an entire flag, identified by name.
   """
   @callback delete(flag_name :: atom) ::
-              {:ok, FunWithFlags.Flag.t()}
+              {:ok, FunWithFlags.Flag.t}
               | {:error, any()}
+
 
   @doc """
   Retrieves all the persisted flags.
   """
   @callback all_flags() ::
-              {:ok, [FunWithFlags.Flag.t()]}
+              {:ok, [FunWithFlags.Flag.t]}
               | {:error, any()}
 
   @doc """
@@ -76,8 +79,8 @@ defmodule FunWithFlags.Store.Persistent do
 
   Returns `{:ok, [Flag.t()]}` on success or `{:error, reason}` on failure.
   """
-  @callback put_many([{flag_name :: atom(), [FunWithFlags.Gate.t()]}]) ::
-              {:ok, [FunWithFlags.Flag.t()]} | {:error, any()}
+  @callback put_many([{flag_name :: atom(), [FunWithFlags.Gate.t]}]) ::
+              {:ok, [FunWithFlags.Flag.t]} | {:error, any()}
 
   @doc """
   Atomically deletes all existing flags and replaces them with new ones.
@@ -88,6 +91,6 @@ defmodule FunWithFlags.Store.Persistent do
 
   Returns `{:ok, [Flag.t()]}` on success or `{:error, reason}` on failure.
   """
-  @callback clear_and_replace([{flag_name :: atom(), [FunWithFlags.Gate.t()]}]) ::
-              {:ok, [FunWithFlags.Flag.t()]} | {:error, any()}
+  @callback clear_and_replace([{flag_name :: atom(), [FunWithFlags.Gate.t]}]) ::
+              {:ok, [FunWithFlags.Flag.t]} | {:error, any()}
 end

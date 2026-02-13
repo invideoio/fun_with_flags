@@ -29,7 +29,8 @@ defmodule FunWithFlags do
 
   @store FunWithFlags.Config.store_module_determined_at_compile_time()
 
-  @type options :: Keyword.t()
+  @type options :: Keyword.t
+
 
   @doc """
   Checks if a flag is enabled.
@@ -77,14 +78,15 @@ defmodule FunWithFlags do
     Flag.enabled?(flag)
   end
 
-  def enabled?(flag_name, for: nil) do
+  def enabled?(flag_name, [for: nil]) do
     enabled?(flag_name)
   end
 
-  def enabled?(flag_name, for: item) when is_atom(flag_name) do
+  def enabled?(flag_name, [for: item]) when is_atom(flag_name) do
     {:ok, flag} = @store.lookup(flag_name)
     Flag.enabled?(flag, for: item)
   end
+
 
   @doc """
   Enables a feature flag.
@@ -177,56 +179,54 @@ defmodule FunWithFlags do
 
   def enable(flag_name, []) when is_atom(flag_name) do
     gate = Gate.new(:boolean, true)
-
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag)
       error -> error
     end
   end
 
-  def enable(flag_name, for_actor: nil) do
+  def enable(flag_name, [for_actor: nil]) do
     enable(flag_name)
   end
 
-  def enable(flag_name, for_actor: actor) when is_atom(flag_name) do
+  def enable(flag_name, [for_actor: actor]) when is_atom(flag_name) do
     gate = Gate.new(:actor, actor, true)
-
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag, for: actor)
       error -> error
     end
   end
 
-  def enable(flag_name, for_group: nil) do
+
+  def enable(flag_name, [for_group: nil]) do
     enable(flag_name)
   end
 
-  def enable(flag_name, for_group: group_name) when is_atom(flag_name) do
+  def enable(flag_name, [for_group: group_name]) when is_atom(flag_name) do
     gate = Gate.new(:group, group_name, true)
-
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, true}
       error -> error
     end
   end
 
-  def enable(flag_name, for_percentage_of: {:time, ratio}) when is_atom(flag_name) do
+
+  def enable(flag_name, [for_percentage_of: {:time, ratio}]) when is_atom(flag_name) do
     gate = Gate.new(:percentage_of_time, ratio)
-
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, true}
       error -> error
     end
   end
 
-  def enable(flag_name, for_percentage_of: {:actors, ratio}) when is_atom(flag_name) do
+  def enable(flag_name, [for_percentage_of: {:actors, ratio}]) when is_atom(flag_name) do
     gate = Gate.new(:percentage_of_actors, ratio)
-
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, true}
       error -> error
     end
   end
+
 
   @doc """
   Disables a feature flag.
@@ -311,48 +311,46 @@ defmodule FunWithFlags do
 
   def disable(flag_name, []) when is_atom(flag_name) do
     gate = Gate.new(:boolean, false)
-
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag)
       error -> error
     end
   end
 
-  def disable(flag_name, for_actor: nil) do
+  def disable(flag_name, [for_actor: nil]) do
     disable(flag_name)
   end
 
-  def disable(flag_name, for_actor: actor) when is_atom(flag_name) do
+  def disable(flag_name, [for_actor: actor]) when is_atom(flag_name) do
     gate = Gate.new(:actor, actor, false)
-
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag, for: actor)
       error -> error
     end
   end
 
-  def disable(flag_name, for_group: nil) do
+  def disable(flag_name, [for_group: nil]) do
     disable(flag_name)
   end
 
-  def disable(flag_name, for_group: group_name) when is_atom(flag_name) do
+  def disable(flag_name, [for_group: group_name]) when is_atom(flag_name) do
     gate = Gate.new(:group, group_name, false)
-
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, false}
       error -> error
     end
   end
 
-  def disable(flag_name, for_percentage_of: {type, ratio})
-      when is_atom(flag_name) and is_float(ratio) do
-    inverted_ratio = 1.0 - ratio
 
-    case enable(flag_name, for_percentage_of: {type, inverted_ratio}) do
+  def disable(flag_name, [for_percentage_of: {type, ratio}])
+  when is_atom(flag_name) and is_float(ratio) do
+    inverted_ratio = 1.0 - ratio
+    case enable(flag_name, [for_percentage_of: {type, inverted_ratio}]) do
       {:ok, true} -> {:ok, false}
       error -> error
     end
   end
+
 
   @doc """
   Clears the data of a feature flag.
@@ -426,35 +424,31 @@ defmodule FunWithFlags do
     end
   end
 
-  def clear(flag_name, boolean: true) do
-    # we only care about the gate id
-    gate = Gate.new(:boolean, false)
+  def clear(flag_name, [boolean: true]) do
+    gate = Gate.new(:boolean, false) # we only care about the gate id
     _clear_gate(flag_name, gate)
   end
 
-  def clear(flag_name, for_actor: nil) do
+  def clear(flag_name, [for_actor: nil]) do
     clear(flag_name)
   end
 
-  def clear(flag_name, for_actor: actor) when is_atom(flag_name) do
-    # we only care about the gate id
-    gate = Gate.new(:actor, actor, false)
+  def clear(flag_name, [for_actor: actor]) when is_atom(flag_name) do
+    gate = Gate.new(:actor, actor, false) # we only care about the gate id
     _clear_gate(flag_name, gate)
   end
 
-  def clear(flag_name, for_group: nil) do
+  def clear(flag_name, [for_group: nil]) do
     clear(flag_name)
   end
 
-  def clear(flag_name, for_group: group_name) when is_atom(flag_name) do
-    # we only care about the gate id
-    gate = Gate.new(:group, group_name, false)
+  def clear(flag_name, [for_group: group_name]) when is_atom(flag_name) do
+    gate = Gate.new(:group, group_name, false) # we only care about the gate id
     _clear_gate(flag_name, gate)
   end
 
-  def clear(flag_name, for_percentage: true) do
-    # we only care about the gate id
-    gate = Gate.new(:percentage_of_time, 0.5)
+  def clear(flag_name, [for_percentage: true]) do
+    gate = Gate.new(:percentage_of_time, 0.5) # we only care about the gate id
     _clear_gate(flag_name, gate)
   end
 
@@ -464,6 +458,7 @@ defmodule FunWithFlags do
       error -> error
     end
   end
+
 
   @doc """
   Returns a list of all flag names currently configured, as atoms.
@@ -486,10 +481,11 @@ defmodule FunWithFlags do
 
   To query the value of a flag, please use the `enabled?2` function instead.
   """
-  @spec all_flags() :: {:ok, [FunWithFlags.Flag.t()]} | {:error, any}
+  @spec all_flags() :: {:ok, [FunWithFlags.Flag.t]} | {:error, any}
   def all_flags do
     @store.all_flags()
   end
+
 
   @doc """
   Exports all feature flags to a binary format suitable for backup or migration.
@@ -512,12 +508,9 @@ defmodule FunWithFlags do
           exported_at: DateTime.utc_now(),
           flags: flags
         }
-
         binary = :erlang.term_to_binary(data, [:compressed])
 
-        # Emit telemetry event
         metadata = %{flag_count: length(flags), byte_size: byte_size(binary)}
-
         :telemetry.execute(
           [:fun_with_flags, :export_flags],
           %{count: metadata.flag_count, bytes: metadata.byte_size},
@@ -525,11 +518,11 @@ defmodule FunWithFlags do
         )
 
         {:ok, binary}
-
       {:error, reason} ->
         {:error, reason}
     end
   end
+
 
   @doc """
   Imports feature flags from a binary file created by `export_flags/0`.
@@ -555,10 +548,6 @@ defmodule FunWithFlags do
       # Destructive replacement
       {:ok, 42} = FunWithFlags.import_flags(binary, :clear_and_import)
 
-      # Validation error
-      {:error, "Maximum 10,000 flags allowed, got 15,000"} =
-        FunWithFlags.import_flags(large_binary, :import_and_overwrite)
-
   """
   @spec import_flags(binary(), :clear_and_import | :import_and_overwrite) ::
           {:ok, imported_count :: non_neg_integer()} | {:error, String.t()}
@@ -567,17 +556,13 @@ defmodule FunWithFlags do
          :ok <- validate_flag_count(data.flags),
          :ok <- validate_flag_names(data.flags),
          {:ok, flags} <- do_import(data.flags, mode) do
-      # Flush entire cache after bulk operation
       FunWithFlags.Store.Cache.flush()
 
-      # Publish cache flush notification to all nodes
-      if Config.change_notifications_enabled?() do
-        Config.notifications_adapter().publish_cache_flush()
+      if Config.change_notifications_enabled? do
+        Config.notifications_adapter.publish_cache_flush()
       end
 
-      # Emit telemetry event
       metadata = %{mode: mode, flag_count: length(flags)}
-
       :telemetry.execute(
         [:fun_with_flags, :import_flags],
         %{count: metadata.flag_count},
@@ -588,27 +573,24 @@ defmodule FunWithFlags do
     end
   end
 
+
   defp validate_import_binary(binary) when is_binary(binary) do
     try do
-      # :safe prevents code injection - only allows safe terms
       data = :erlang.binary_to_term(binary, [:safe])
 
       case data do
         %{version: v, flags: flags} when is_integer(v) and is_list(flags) ->
-          # Validate all items are Flag structs
           if Enum.all?(flags, &match?(%FunWithFlags.Flag{}, &1)) do
             {:ok, data}
           else
             {:error, "Invalid flag structures in binary"}
           end
-
         _ ->
           {:error, "Invalid binary structure (missing version or flags)"}
       end
     rescue
       ArgumentError ->
         {:error, "Invalid binary format or contains unsafe terms"}
-
       e ->
         {:error, "Deserialization failed: #{Exception.message(e)}"}
     end
@@ -616,7 +598,6 @@ defmodule FunWithFlags do
 
   defp validate_flag_count(flags) when is_list(flags) do
     count = length(flags)
-
     if count <= 10_000 do
       :ok
     else
@@ -625,13 +606,10 @@ defmodule FunWithFlags do
   end
 
   defp validate_flag_names(flags) do
-    # Check all flag names follow naming rules (alphanumeric + underscore)
-    # This prevents atom exhaustion attacks
-    invalid_flags =
-      Enum.filter(flags, fn flag ->
-        name_str = to_string(flag.name)
-        not Regex.match?(~r/^[a-zA-Z0-9_]+$/, name_str)
-      end)
+    invalid_flags = Enum.filter(flags, fn flag ->
+      name_str = to_string(flag.name)
+      not Regex.match?(~r/^[a-zA-Z0-9_]+$/, name_str)
+    end)
 
     if Enum.empty?(invalid_flags) do
       :ok
@@ -659,13 +637,14 @@ defmodule FunWithFlags do
     end
   end
 
+
   @doc """
   Returns a `FunWithFlags.Flag` struct for the given name, or `nil` if
   no flag is found.
 
   Useful for debugging.
   """
-  @spec get_flag(atom) :: FunWithFlags.Flag.t() | nil | {:error, any}
+  @spec get_flag(atom) :: FunWithFlags.Flag.t | nil | {:error, any}
   def get_flag(name) do
     case all_flag_names() do
       {:ok, names} ->
@@ -681,17 +660,15 @@ defmodule FunWithFlags do
         else
           nil
         end
-
-      error ->
-        error
+      error -> error
     end
   end
+
 
   defp verify(flag) do
     {:ok, Flag.enabled?(flag)}
   end
-
-  defp verify(flag, for: data) do
+  defp verify(flag, [for: data]) do
     {:ok, Flag.enabled?(flag, for: data)}
   end
 
