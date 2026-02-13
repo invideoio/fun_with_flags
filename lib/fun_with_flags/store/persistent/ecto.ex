@@ -326,6 +326,63 @@ defmodule FunWithFlags.Store.Persistent.Ecto do
     end
   end
 
+
+  @impl true
+  def put_many(flag_gate_tuples) when is_list(flag_gate_tuples) do
+    repo = ecto_repo()
+
+    case repo.transaction(fn ->
+      do_put_many(repo, flag_gate_tuples)
+    end) do
+      {:ok, flags} -> {:ok, flags}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+
+  @impl true
+  def clear_and_replace(flag_gate_tuples) when is_list(flag_gate_tuples) do
+    repo = ecto_repo()
+
+    case repo.transaction(fn ->
+      # Delete all existing flags
+      repo.delete_all(Record, @query_opts)
+
+      # Import new flags
+      do_put_many(repo, flag_gate_tuples)
+    end) do
+      {:ok, flags} -> {:ok, flags}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+
+  defp do_put_many(repo, flag_gate_tuples) do
+    # Convert gates to plain maps for insert_all
+    # (Record.build returns changesets, but insert_all needs maps)
+    records = Enum.flat_map(flag_gate_tuples, fn {flag_name, gates} ->
+      Enum.map(gates, fn gate ->
+        changeset = Record.build(flag_name, gate)
+        changeset.changes
+      end)
+    end)
+
+    # Bulk upsert with conflict resolution
+    repo.insert_all(
+      Record,
+      records,
+      [
+        on_conflict: {:replace_all_except, [:id]},
+        conflict_target: [:flag_name, :gate_type, :target]
+      ] ++ @query_opts
+    )
+
+    # Convert back to Flag structs
+    Enum.map(flag_gate_tuples, fn {name, gates} ->
+      %FunWithFlags.Flag{name: name, gates: gates}
+    end)
+  end
+
 end
 
 end # Code.ensure_loaded?

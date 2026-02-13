@@ -61,6 +61,15 @@ defmodule FunWithFlags.Notifications.PhoenixPubSub do
     end
   end
 
+  def publish_cache_flush do
+    Logger.debug fn -> "FunWithFlags.Notifications: publish cache flush" end
+    Task.start fn() ->
+      Phoenix.PubSub.broadcast!(client(), @channel,
+        {:fwf_changes, {:cache_flush, unique_id()}}
+      )
+    end
+  end
+
 
   # ------------------------------------------------------------
   # GenServer callbacks
@@ -136,6 +145,18 @@ defmodule FunWithFlags.Notifications.PhoenixPubSub do
     # received message from another node, reload the flag
     Logger.debug fn -> "FunWithFlags: received change notification for flag '#{name}'" end
     Task.start(Store, :reload, [name])
+    {:noreply, state}
+  end
+
+  def handle_info({:fwf_changes, {:cache_flush, unique_id}}, state = {unique_id, _subscription_status}) do
+    # received my own cache flush message, doing nothing
+    {:noreply, state}
+  end
+
+  def handle_info({:fwf_changes, {:cache_flush, _}}, state) do
+    # received cache flush from another node
+    Logger.debug fn -> "FunWithFlags: received cache flush notification" end
+    Task.start(Store.Cache, :flush, [])
     {:noreply, state}
   end
 

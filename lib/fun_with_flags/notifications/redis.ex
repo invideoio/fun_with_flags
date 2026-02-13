@@ -75,6 +75,16 @@ defmodule FunWithFlags.Notifications.Redis do
     end
   end
 
+  def publish_cache_flush do
+    Logger.debug fn -> "FunWithFlags.Notifications: publish cache flush" end
+    Task.start fn() ->
+      Redix.command(
+        @write_conn,
+        ["PUBLISH", @channel, "#{unique_id()}:__cache_flush__"]
+      )
+    end
+  end
+
   # ------------------------------------------------------------
   # GenServer callbacks
 
@@ -133,6 +143,10 @@ defmodule FunWithFlags.Notifications.Redis do
       [^unique_id, _name] ->
         # received my own message, doing nothing
         nil
+      [_id, "__cache_flush__"] ->
+        # received cache flush from another node
+        Logger.debug fn -> "FunWithFlags: received cache flush notification" end
+        Task.start(Store.Cache, :flush, [])
       [_id, name] ->
         # received message from another node, reload the flag
         Logger.debug fn -> "FunWithFlags: received change notification for flag '#{name}'" end

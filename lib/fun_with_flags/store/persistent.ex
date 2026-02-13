@@ -69,4 +69,28 @@ defmodule FunWithFlags.Store.Persistent do
   @callback all_flag_names() ::
               {:ok, [atom]}
               | {:error, any()}
+
+  @doc """
+  Persists multiple flags, overwriting any that already exist.
+
+  Takes a list of tuples where each tuple contains a flag name (atom) and
+  a list of gates for that flag. Existing flags with the same names will
+  be overwritten.
+
+  Returns `{:ok, [Flag.t()]}` on success or `{:error, reason}` on failure.
+  """
+  @callback put_many([{flag_name :: atom(), [FunWithFlags.Gate.t]}]) ::
+              {:ok, [FunWithFlags.Flag.t]} | {:error, any()}
+
+  @doc """
+  Atomically deletes all existing flags and replaces them with new ones.
+
+  This is a destructive operation: all existing flags are removed, then the
+  provided flags are inserted. The entire operation is atomic — if any part
+  fails, no changes are committed.
+
+  Returns `{:ok, [Flag.t()]}` on success or `{:error, reason}` on failure.
+  """
+  @callback clear_and_replace([{flag_name :: atom(), [FunWithFlags.Gate.t]}]) ::
+              {:ok, [FunWithFlags.Flag.t]} | {:error, any()}
 end

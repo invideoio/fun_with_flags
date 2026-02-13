@@ -488,6 +488,164 @@ defmodule FunWithFlags do
 
 
   @doc """
+  Exports all feature flags to a binary format suitable for backup or migration.
+
+  Returns `{:ok, binary}` containing all flags serialized with Erlang Term Format.
+  The binary includes metadata (version, timestamp) and can be imported via `import_flags/2`.
+
+  ## Example
+
+      {:ok, binary} = FunWithFlags.export_flags()
+      File.write!("backup.etf", binary)
+
+  """
+  @spec export_flags() :: {:ok, binary()} | {:error, any()}
+  def export_flags do
+    case all_flags() do
+      {:ok, flags} ->
+        data = %{
+          version: 1,
+          exported_at: DateTime.utc_now(),
+          flags: flags
+        }
+        binary = :erlang.term_to_binary(data, [:compressed])
+
+        metadata = %{flag_count: length(flags), byte_size: byte_size(binary)}
+        :telemetry.execute(
+          [:fun_with_flags, :export_flags],
+          %{count: metadata.flag_count, bytes: metadata.byte_size},
+          metadata
+        )
+
+        {:ok, binary}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+
+  @doc """
+  Imports feature flags from a binary file created by `export_flags/0`.
+
+  ## Modes
+
+  - `:clear_and_import` - Deletes all existing flags, then imports (destructive!)
+  - `:import_and_overwrite` - Imports flags, overwriting any that exist (safe default)
+
+  ## Validation
+
+  - Maximum 10,000 flags per import
+  - Binary must be valid Erlang Term Format created by `export_flags/0`
+  - All flag names must follow naming rules (alphanumeric + underscore)
+  - Operation is atomic: either all flags import or none do
+
+  ## Examples
+
+      # Safe merge import
+      binary = File.read!("backup.etf")
+      {:ok, 42} = FunWithFlags.import_flags(binary, :import_and_overwrite)
+
+      # Destructive replacement
+      {:ok, 42} = FunWithFlags.import_flags(binary, :clear_and_import)
+
+  """
+  if Mix.env() == :prod do
+    @spec import_flags(binary(), :clear_and_import | :import_and_overwrite) ::
+            {:ok, imported_count :: non_neg_integer()} | {:error, String.t()}
+    def import_flags(_binary, _mode) do
+      {:error, "import_flags is disabled in production"}
+    end
+  else
+    @spec import_flags(binary(), :clear_and_import | :import_and_overwrite) ::
+            {:ok, imported_count :: non_neg_integer()} | {:error, String.t()}
+    def import_flags(binary, mode) when mode in [:clear_and_import, :import_and_overwrite] do
+      with {:ok, data} <- validate_import_binary(binary),
+           :ok <- validate_flag_count(data.flags),
+           :ok <- validate_flag_names(data.flags),
+           {:ok, flags} <- do_import(data.flags, mode) do
+        FunWithFlags.Store.Cache.flush()
+
+        if Config.change_notifications_enabled? do
+          Config.notifications_adapter.publish_cache_flush()
+        end
+
+        metadata = %{mode: mode, flag_count: length(flags)}
+        :telemetry.execute(
+          [:fun_with_flags, :import_flags],
+          %{count: metadata.flag_count},
+          %{mode: metadata.mode}
+        )
+
+        {:ok, length(flags)}
+      end
+    end
+
+    defp validate_import_binary(binary) when is_binary(binary) do
+      try do
+        data = :erlang.binary_to_term(binary, [:safe])
+
+        case data do
+          %{version: v, flags: flags} when is_integer(v) and is_list(flags) ->
+            if Enum.all?(flags, &match?(%FunWithFlags.Flag{}, &1)) do
+              {:ok, data}
+            else
+              {:error, "Invalid flag structures in binary"}
+            end
+          _ ->
+            {:error, "Invalid binary structure (missing version or flags)"}
+        end
+      rescue
+        ArgumentError ->
+          {:error, "Invalid binary format or contains unsafe terms"}
+        e ->
+          {:error, "Deserialization failed: #{Exception.message(e)}"}
+      end
+    end
+
+    defp validate_flag_count(flags) when is_list(flags) do
+      count = length(flags)
+      if count <= 10_000 do
+        :ok
+      else
+        {:error, "Maximum 10,000 flags allowed, got #{count}"}
+      end
+    end
+
+    defp validate_flag_names(flags) do
+      invalid_flags = Enum.filter(flags, fn flag ->
+        name_str = to_string(flag.name)
+        not Regex.match?(~r/^[a-zA-Z0-9_]+$/, name_str)
+      end)
+
+      if Enum.empty?(invalid_flags) do
+        :ok
+      else
+        names = Enum.map_join(invalid_flags, ", ", & &1.name)
+        {:error, "Invalid flag names (must be alphanumeric + underscore): #{names}"}
+      end
+    end
+
+    defp do_import(flags, :clear_and_import) do
+      flag_gate_tuples = Enum.map(flags, fn flag -> {flag.name, flag.gates} end)
+
+      case Config.persistence_adapter().clear_and_replace(flag_gate_tuples) do
+        {:ok, flags} -> {:ok, flags}
+        {:error, reason} -> {:error, "Import failed: #{inspect(reason)}"}
+      end
+    end
+
+    defp do_import(flags, :import_and_overwrite) do
+      flag_gate_tuples = Enum.map(flags, fn flag -> {flag.name, flag.gates} end)
+
+      case Config.persistence_adapter().put_many(flag_gate_tuples) do
+        {:ok, flags} -> {:ok, flags}
+        {:error, reason} -> {:error, "Import failed: #{inspect(reason)}"}
+      end
+    end
+  end
+
+
+  @doc """
   Returns a `FunWithFlags.Flag` struct for the given name, or `nil` if
   no flag is found.
 
