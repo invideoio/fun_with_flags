@@ -145,58 +145,60 @@ if Code.ensure_loaded?(Redix) do
     end
 
     @impl true
-    def delete_all do
-      # Use Lua script for atomicity
-      lua_script = """
-      local flags_set = KEYS[1]
-      local flag_names = redis.call('SMEMBERS', flags_set)
-      local count = #flag_names
-
-      -- Delete the flags set itself
-      redis.call('DEL', flags_set)
-
-      -- Delete each flag hash
-      for _, flag_name in ipairs(flag_names) do
-        redis.call('DEL', 'fun_with_flags:' .. flag_name)
-      end
-
-      return count
-      """
-
-      case Redix.command(@conn, ["EVAL", lua_script, 1, @flags_set]) do
-        {:ok, count} -> {:ok, count}
-        {:error, reason} -> {:error, redis_error(reason)}
-      end
+    def put_many(flag_gate_tuples) when is_list(flag_gate_tuples) do
+      commands = [["MULTI"]] ++ build_put_many_commands(flag_gate_tuples) ++ [["EXEC"]]
+      exec_transaction(commands, flag_gate_tuples)
     end
 
     @impl true
-    def put_many(flag_gate_tuples) when is_list(flag_gate_tuples) do
-      # Build MULTI/EXEC transaction with all flag operations
-      commands = [["MULTI"]]
+    def clear_and_replace(flag_gate_tuples) when is_list(flag_gate_tuples) do
+      # First, get existing flag names so we can delete their hashes
+      case Redix.command(@conn, ["SMEMBERS", @flags_set]) do
+        {:ok, existing_names} ->
+          # Build a single MULTI/EXEC that deletes everything and inserts new data
+          delete_commands =
+            Enum.map(existing_names, fn name -> ["DEL", format(name)] end)
 
-      # Add SADD and HSET for each flag
-      flag_commands =
-        Enum.flat_map(flag_gate_tuples, fn {flag_name, gates} ->
-          flag_name_str = to_string(flag_name)
-          # Serialize gates into a flat list
-          serialized_data = Enum.flat_map(gates, &Serializer.serialize/1)
+          commands =
+            [["MULTI"]] ++
+              [["DEL", @flags_set]] ++
+              delete_commands ++
+              build_put_many_commands(flag_gate_tuples) ++
+              [["EXEC"]]
 
-          [
-            ["SADD", @flags_set, flag_name_str],
-            # Clear existing gates
-            ["DEL", format(flag_name)],
-            ["HSET" | [format(flag_name) | serialized_data]]
-          ]
-        end)
+          exec_transaction(commands, flag_gate_tuples)
 
-      commands = commands ++ flag_commands ++ [["EXEC"]]
+        {:error, reason} ->
+          {:error, redis_error(reason)}
+      end
+    end
 
+    defp build_put_many_commands(flag_gate_tuples) do
+      Enum.flat_map(flag_gate_tuples, fn {flag_name, gates} ->
+        flag_name_str = to_string(flag_name)
+        serialized_data = Enum.flat_map(gates, &Serializer.serialize/1)
+
+        # Always register the flag name and clear existing gates
+        base = [
+          ["SADD", @flags_set, flag_name_str],
+          ["DEL", format(flag_name)]
+        ]
+
+        # Only HSET if there are gates (HSET with no fields is an error)
+        if serialized_data != [] do
+          base ++ [["HSET" | [format(flag_name) | serialized_data]]]
+        else
+          base
+        end
+      end)
+    end
+
+    defp exec_transaction(commands, flag_gate_tuples) do
       case Redix.pipeline(@conn, commands) do
         {:ok, results} ->
           # Last result is EXEC result
           case List.last(results) do
             result when is_list(result) ->
-              # Convert back to Flag structs
               flags =
                 Enum.map(flag_gate_tuples, fn {name, gates} ->
                   %FunWithFlags.Flag{name: name, gates: gates}

@@ -88,22 +88,6 @@ defmodule FunWithFlags.Store do
     |> Telemetry.emit_persistence_event(:read_all_flag_names, nil, nil)
   end
 
-  @doc """
-  Executes multiple operations atomically within a transaction.
-  Used for bulk import operations that need transactional guarantees.
-  """
-  @spec transaction((-> result)) :: {:ok, result} | {:error, any()} when result: any()
-  def transaction(fun) when is_function(fun, 0) do
-    # For Redis: no transaction wrapper needed (operations are already atomic)
-    # For Ecto: transaction is handled at adapter level
-    try do
-      result = fun.()
-      {:ok, result}
-    rescue
-      error -> {:error, error}
-    end
-  end
-
   defp cache_persistence_result(result = {:ok, flag}) do
     Cache.put(flag)
     result

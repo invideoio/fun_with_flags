@@ -642,26 +642,11 @@ defmodule FunWithFlags do
   end
 
   defp do_import(flags, :clear_and_import) do
-    case @store.transaction(fn ->
-           # Delete all existing flags
-           case Config.persistence_adapter().delete_all() do
-             {:ok, _count} ->
-               # Import new flags
-               flag_gate_tuples = Enum.map(flags, fn flag -> {flag.name, flag.gates} end)
+    flag_gate_tuples = Enum.map(flags, fn flag -> {flag.name, flag.gates} end)
 
-               case Config.persistence_adapter().put_many(flag_gate_tuples) do
-                 {:ok, imported_flags} -> {:ok, imported_flags}
-                 {:error, reason} -> {:error, {:import_failed, reason}}
-               end
-
-             {:error, reason} ->
-               {:error, {:delete_failed, reason}}
-           end
-         end) do
-      {:ok, {:ok, flags}} -> {:ok, flags}
-      {:ok, {:error, {:import_failed, reason}}} -> {:error, "Import failed: #{inspect(reason)}"}
-      {:ok, {:error, {:delete_failed, reason}}} -> {:error, "Delete failed: #{inspect(reason)}"}
-      {:error, reason} -> {:error, "Transaction failed: #{inspect(reason)}"}
+    case Config.persistence_adapter().clear_and_replace(flag_gate_tuples) do
+      {:ok, flags} -> {:ok, flags}
+      {:error, reason} -> {:error, "Import failed: #{inspect(reason)}"}
     end
   end
 
