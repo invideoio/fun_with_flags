@@ -614,7 +614,7 @@ defmodule FunWithFlags do
     if Enum.empty?(invalid_flags) do
       :ok
     else
-      names = Enum.map(invalid_flags, & &1.name) |> Enum.join(", ")
+      names = Enum.map_join(invalid_flags, ", ", & &1.name)
       {:error, "Invalid flag names (must be alphanumeric + underscore): #{names}"}
     end
   end
