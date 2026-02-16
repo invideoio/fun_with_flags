@@ -29,3 +29,6 @@ dump.rdb
 fun_with_flags_test
 fun_with_flags_test-shm
 fun_with_flags_test-wal
+
+.claude/logs
+.claude/settings.local.json
