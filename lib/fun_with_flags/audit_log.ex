@@ -4,8 +4,8 @@ defmodule FunWithFlags.AuditLog do
   @moduledoc false
 
   require Logger
-  alias FunWithFlags.{Config, Flag, Gate}
   alias FunWithFlags.AuditLog.Record
+  alias FunWithFlags.{Config, Flag, Gate}
 
   @doc """
   Logs an audit event for a flag mutation.
