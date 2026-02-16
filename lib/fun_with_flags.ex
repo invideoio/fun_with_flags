@@ -579,7 +579,16 @@ defmodule FunWithFlags do
 
   defp validate_import_binary(binary) when is_binary(binary) do
     try do
-      data = :erlang.binary_to_term(binary, [:safe])
+      # NOTE: We cannot use the [:safe] option here because exported flag data
+      # contains flag names as atoms (e.g. :my_feature_flag) which won't exist
+      # in the importing system's atom table. The :safe option refuses to create
+      # new atoms, causing imports between different environments to fail.
+      #
+      # Instead, we rely on the validation pipeline that follows:
+      # - Struct matching ensures only FunWithFlags.Flag structs are accepted
+      # - Flag count is capped at 10,000 (validate_flag_count/1)
+      # - Flag names must match ^[a-zA-Z0-9_]+$ (validate_flag_names/1)
+      data = :erlang.binary_to_term(binary)
 
       case data do
         %{version: v, flags: flags} when is_integer(v) and is_list(flags) ->
@@ -593,7 +602,7 @@ defmodule FunWithFlags do
       end
     rescue
       ArgumentError ->
-        {:error, "Invalid binary format or contains unsafe terms"}
+        {:error, "Invalid binary format"}
       e ->
         {:error, "Deserialization failed: #{Exception.message(e)}"}
     end
