@@ -44,7 +44,10 @@ defmodule FunWithFlags.AuditLog do
     data = if flag_state_before, do: Map.put(data, :flag_state_before, serialize_flag(flag_state_before)), else: data
     data = if operation_metadata, do: Map.put(data, :operation_metadata, operation_metadata), else: data
 
+    flag_name_str = to_string(flag_name)
+
     params = %{
+      flag_name: if(flag_name_str == "_bulk_operation", do: nil, else: flag_name_str),
       user_id: user_id,
       data: data,
       inserted_at: DateTime.utc_now() |> DateTime.truncate(:second)

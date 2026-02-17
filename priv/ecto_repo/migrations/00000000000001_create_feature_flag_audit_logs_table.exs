@@ -11,11 +11,13 @@ defmodule FunWithFlags.Dev.EctoRepo.Migrations.CreateFeatureFlagAuditLogsTable d
       # If you configure :ecto_primary_key_type to be :binary_id, you should replace
       # the line above with:
       # add :id, :binary_id, primary_key: true
+      add :flag_name, :string
       add :user_id, :string
       add :data, :map, null: false        # jsonb on Postgres; use :text on MySQL/SQLite
       add :inserted_at, :utc_datetime, null: false
     end
 
+    create index(:fun_with_flags_audit_logs, [:flag_name])
     create index(:fun_with_flags_audit_logs, [:user_id])
     create index(:fun_with_flags_audit_logs, [:inserted_at])
   end

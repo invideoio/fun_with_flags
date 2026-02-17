@@ -677,11 +677,12 @@ The audit log table has a minimal schema with a flexible JSON `data` column:
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | bigserial / binary_id | Primary key |
+| `flag_name` | string, nullable | The flag name (null for bulk operations like import/export) |
 | `user_id` | string, nullable | The user who performed the action |
 | `data` | jsonb, NOT NULL | JSON object with all event details (see below) |
 | `inserted_at` | utc_datetime, NOT NULL | When the action occurred |
 
-Indexes are created on `user_id` and `inserted_at`.
+Indexes are created on `flag_name`, `user_id`, and `inserted_at`.
 
 The `data` JSON column always contains `action` and `flag_name`. Depending on the operation, it may also include:
 
