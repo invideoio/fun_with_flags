@@ -4,6 +4,7 @@ defmodule FunWithFlags.AuditLog do
   @moduledoc false
 
   require Logger
+  import Ecto.Query
   alias FunWithFlags.AuditLog.Record
   alias FunWithFlags.{Config, Flag, Gate}
 
@@ -27,6 +28,106 @@ defmodule FunWithFlags.AuditLog do
     else
       :ok
     end
+  end
+
+  @doc """
+  Lists audit log entries with optional filtering and pagination.
+
+  ## Options
+
+    * `:flag_name` - partial match on flag name (case-insensitive)
+    * `:page` - page number (1-based, default 1)
+    * `:per_page` - results per page (default 25, max 100)
+
+  Returns `{:ok, %{records: [...], total: int, page: int, per_page: int, total_pages: int}}`
+  """
+  @spec list(keyword()) :: {:ok, map()} | {:error, any()}
+  def list(opts \\ []) do
+    if Config.audit_log_enabled?() do
+      do_list(opts)
+    else
+      {:error, :audit_log_not_configured}
+    end
+  end
+
+  @doc """
+  Lists audit log entries for a specific flag with pagination.
+
+  ## Options
+
+    * `:page` - page number (1-based, default 1)
+    * `:per_page` - results per page (default 25, max 100)
+
+  Returns `{:ok, %{records: [...], total: int, page: int, per_page: int, total_pages: int}}`
+  """
+  @spec list_for_flag(String.t(), keyword()) :: {:ok, map()} | {:error, any()}
+  def list_for_flag(flag_name, opts \\ []) do
+    if Config.audit_log_enabled?() do
+      do_list_for_flag(flag_name, opts)
+    else
+      {:error, :audit_log_not_configured}
+    end
+  end
+
+  defp do_list(opts) do
+    page = max(Keyword.get(opts, :page, 1), 1)
+    per_page = opts |> Keyword.get(:per_page, 25) |> max(1) |> min(100)
+    flag_name = Keyword.get(opts, :flag_name)
+    repo = Config.audit_log_repo()
+
+    base_query = from(r in Record, order_by: [desc: r.inserted_at, desc: r.id])
+
+    base_query =
+      if flag_name && flag_name != "" do
+        search = "%" <> String.downcase(flag_name) <> "%"
+        from(r in base_query, where: like(fragment("LOWER(?)", r.flag_name), ^search))
+      else
+        base_query
+      end
+
+    total = repo.aggregate(base_query, :count)
+    total_pages = max(ceil(total / per_page), 1)
+    offset = (page - 1) * per_page
+
+    records =
+      base_query
+      |> limit(^per_page)
+      |> offset(^offset)
+      |> repo.all()
+
+    {:ok, %{records: records, total: total, page: page, per_page: per_page, total_pages: total_pages}}
+  rescue
+    e ->
+      Logger.warning("FunWithFlags.AuditLog: exception during list: #{Exception.message(e)}")
+      {:error, e}
+  end
+
+  defp do_list_for_flag(flag_name, opts) do
+    page = max(Keyword.get(opts, :page, 1), 1)
+    per_page = opts |> Keyword.get(:per_page, 25) |> max(1) |> min(100)
+    repo = Config.audit_log_repo()
+
+    base_query =
+      from(r in Record,
+        where: r.flag_name == ^flag_name,
+        order_by: [desc: r.inserted_at, desc: r.id]
+      )
+
+    total = repo.aggregate(base_query, :count)
+    total_pages = max(ceil(total / per_page), 1)
+    offset = (page - 1) * per_page
+
+    records =
+      base_query
+      |> limit(^per_page)
+      |> offset(^offset)
+      |> repo.all()
+
+    {:ok, %{records: records, total: total, page: page, per_page: per_page, total_pages: total_pages}}
+  rescue
+    e ->
+      Logger.warning("FunWithFlags.AuditLog: exception during list_for_flag: #{Exception.message(e)}")
+      {:error, e}
   end
 
   defp do_log(action, flag_name, opts) do

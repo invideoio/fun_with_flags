@@ -751,6 +751,47 @@ defmodule FunWithFlags do
   end
 
 
+  @doc """
+  Lists audit log entries with optional filtering and pagination.
+
+  ## Options
+
+    * `:flag_name` - partial match on flag name (case-insensitive)
+    * `:page` - page number (1-based, default 1)
+    * `:per_page` - results per page (default 25, max 100)
+
+  Returns `{:ok, %{records: [...], total: int, page: int, per_page: int, total_pages: int}}`
+  or `{:error, :audit_log_not_available}` if audit logging is not configured.
+  """
+  @spec audit_log_entries(keyword()) :: {:ok, map()} | {:error, any()}
+  def audit_log_entries(opts \\ []) do
+    if audit_log_query_available?() do
+      FunWithFlags.AuditLog.list(opts)
+    else
+      {:error, :audit_log_not_available}
+    end
+  end
+
+  @doc """
+  Lists audit log entries for a specific flag with pagination.
+
+  ## Options
+
+    * `:page` - page number (1-based, default 1)
+    * `:per_page` - results per page (default 25, max 100)
+
+  Returns `{:ok, %{records: [...], total: int, page: int, per_page: int, total_pages: int}}`
+  or `{:error, :audit_log_not_available}` if audit logging is not configured.
+  """
+  @spec audit_log_entries_for_flag(String.t(), keyword()) :: {:ok, map()} | {:error, any()}
+  def audit_log_entries_for_flag(flag_name, opts \\ []) do
+    if audit_log_query_available?() do
+      FunWithFlags.AuditLog.list_for_flag(flag_name, opts)
+    else
+      {:error, :audit_log_not_available}
+    end
+  end
+
   defp verify(flag) do
     {:ok, Flag.enabled?(flag)}
   end
@@ -807,6 +848,11 @@ defmodule FunWithFlags do
   defp audit_log_available? do
     Code.ensure_loaded?(FunWithFlags.AuditLog) and
       function_exported?(FunWithFlags.AuditLog, :log, 3)
+  end
+
+  defp audit_log_query_available? do
+    Code.ensure_loaded?(FunWithFlags.AuditLog) and
+      function_exported?(FunWithFlags.AuditLog, :list, 1)
   end
 
   defp maybe_audit_log(action, flag_name, opts) do
