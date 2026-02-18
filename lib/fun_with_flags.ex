@@ -102,6 +102,8 @@ defmodule FunWithFlags do
   * `:for_percentage_of` - used to enable the flag for a percentage
   of time or actors, expressed as `{:time, float}` or `{:actors, float}`,
   where float is in the range `0.0 < x < 1.0`.
+  * `:audit` - a keyword list with audit options. Supported keys:
+    * `:user_id` - the user who performed the action (string)
 
   ## Examples
 
@@ -177,7 +179,19 @@ defmodule FunWithFlags do
   @spec enable(atom, options) :: {:ok, true} | {:error, any}
   def enable(flag_name, options \\ [])
 
-  def enable(flag_name, []) when is_atom(flag_name) do
+  def enable(flag_name, options) when is_atom(flag_name) do
+    {audit_opts, gate_opts} = extract_audit_opts(options)
+    result = do_enable(flag_name, gate_opts)
+    case result do
+      {:ok, _} ->
+        gate = gate_for_enable(gate_opts)
+        maybe_audit_log(:enable, flag_name, gate: gate, user_id: audit_opts[:user_id])
+      _ -> :ok
+    end
+    result
+  end
+
+  defp do_enable(flag_name, []) do
     gate = Gate.new(:boolean, true)
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag)
@@ -185,11 +199,11 @@ defmodule FunWithFlags do
     end
   end
 
-  def enable(flag_name, [for_actor: nil]) do
-    enable(flag_name)
+  defp do_enable(flag_name, [for_actor: nil]) do
+    do_enable(flag_name, [])
   end
 
-  def enable(flag_name, [for_actor: actor]) when is_atom(flag_name) do
+  defp do_enable(flag_name, [for_actor: actor]) do
     gate = Gate.new(:actor, actor, true)
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag, for: actor)
@@ -197,12 +211,11 @@ defmodule FunWithFlags do
     end
   end
 
-
-  def enable(flag_name, [for_group: nil]) do
-    enable(flag_name)
+  defp do_enable(flag_name, [for_group: nil]) do
+    do_enable(flag_name, [])
   end
 
-  def enable(flag_name, [for_group: group_name]) when is_atom(flag_name) do
+  defp do_enable(flag_name, [for_group: group_name]) do
     gate = Gate.new(:group, group_name, true)
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, true}
@@ -210,8 +223,7 @@ defmodule FunWithFlags do
     end
   end
 
-
-  def enable(flag_name, [for_percentage_of: {:time, ratio}]) when is_atom(flag_name) do
+  defp do_enable(flag_name, [for_percentage_of: {:time, ratio}]) do
     gate = Gate.new(:percentage_of_time, ratio)
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, true}
@@ -219,7 +231,7 @@ defmodule FunWithFlags do
     end
   end
 
-  def enable(flag_name, [for_percentage_of: {:actors, ratio}]) when is_atom(flag_name) do
+  defp do_enable(flag_name, [for_percentage_of: {:actors, ratio}]) do
     gate = Gate.new(:percentage_of_actors, ratio)
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, true}
@@ -242,6 +254,8 @@ defmodule FunWithFlags do
   * `:for_percentage_of` - used to disable the flag for a percentage
   of time or actors, expressed as `{:time, float}` or `{:actors, float}`,
   where float is in the range `0.0 < x < 1.0`.
+  * `:audit` - a keyword list with audit options. Supported keys:
+    * `:user_id` - the user who performed the action (string)
 
   ## Examples
 
@@ -309,7 +323,19 @@ defmodule FunWithFlags do
   @spec disable(atom, options) :: {:ok, boolean()} | {:error, any}
   def disable(flag_name, options \\ [])
 
-  def disable(flag_name, []) when is_atom(flag_name) do
+  def disable(flag_name, options) when is_atom(flag_name) do
+    {audit_opts, gate_opts} = extract_audit_opts(options)
+    result = do_disable(flag_name, gate_opts)
+    case result do
+      {:ok, _} ->
+        gate = gate_for_disable(gate_opts)
+        maybe_audit_log(:disable, flag_name, gate: gate, user_id: audit_opts[:user_id])
+      _ -> :ok
+    end
+    result
+  end
+
+  defp do_disable(flag_name, []) do
     gate = Gate.new(:boolean, false)
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag)
@@ -317,11 +343,11 @@ defmodule FunWithFlags do
     end
   end
 
-  def disable(flag_name, [for_actor: nil]) do
-    disable(flag_name)
+  defp do_disable(flag_name, [for_actor: nil]) do
+    do_disable(flag_name, [])
   end
 
-  def disable(flag_name, [for_actor: actor]) when is_atom(flag_name) do
+  defp do_disable(flag_name, [for_actor: actor]) do
     gate = Gate.new(:actor, actor, false)
     case @store.put(flag_name, gate) do
       {:ok, flag} -> verify(flag, for: actor)
@@ -329,11 +355,11 @@ defmodule FunWithFlags do
     end
   end
 
-  def disable(flag_name, [for_group: nil]) do
-    disable(flag_name)
+  defp do_disable(flag_name, [for_group: nil]) do
+    do_disable(flag_name, [])
   end
 
-  def disable(flag_name, [for_group: group_name]) when is_atom(flag_name) do
+  defp do_disable(flag_name, [for_group: group_name]) do
     gate = Gate.new(:group, group_name, false)
     case @store.put(flag_name, gate) do
       {:ok, _flag} -> {:ok, false}
@@ -341,11 +367,9 @@ defmodule FunWithFlags do
     end
   end
 
-
-  def disable(flag_name, [for_percentage_of: {type, ratio}])
-      when is_atom(flag_name) and is_float(ratio) do
+  defp do_disable(flag_name, [for_percentage_of: {type, ratio}]) when is_float(ratio) do
     inverted_ratio = 1.0 - ratio
-    case enable(flag_name, [for_percentage_of: {type, inverted_ratio}]) do
+    case do_enable(flag_name, [for_percentage_of: {type, inverted_ratio}]) do
       {:ok, true} -> {:ok, false}
       error -> error
     end
@@ -377,6 +401,8 @@ defmodule FunWithFlags do
   supported for retro-compatibility with versions <= 0.9)
   * `boolean: true` - used to clear the boolean gate.
   * `for_percentage: true` - used to clear any percentage gate.
+  * `:audit` - a keyword list with audit options. Supported keys:
+    * `:user_id` - the user who performed the action (string)
 
   ## Examples
 
@@ -417,42 +443,70 @@ defmodule FunWithFlags do
   @spec clear(atom, options) :: :ok | {:error, any}
   def clear(flag_name, options \\ [])
 
-  def clear(flag_name, []) when is_atom(flag_name) do
+  def clear(flag_name, options) when is_atom(flag_name) do
+    {audit_opts, gate_opts} = extract_audit_opts(options)
+
+    # Capture flag state before deletion when audit logging is enabled
+    flag_state_before =
+      if audit_opts[:user_id] || audit_log_available?() do
+        case get_flag(flag_name) do
+          %Flag{} = flag -> flag
+          _ -> nil
+        end
+      end
+
+    result = do_clear(flag_name, gate_opts)
+
+    case result do
+      :ok ->
+        {action, gate} = clear_action_and_gate(gate_opts)
+        maybe_audit_log(action, flag_name,
+          gate: gate,
+          user_id: audit_opts[:user_id],
+          flag_state_before: flag_state_before
+        )
+      _ -> :ok
+    end
+
+    result
+  end
+
+  defp do_clear(flag_name, []) do
     case @store.delete(flag_name) do
       {:ok, _flag} -> :ok
       error -> error
     end
   end
 
-  def clear(flag_name, [boolean: true]) do
-    gate = Gate.new(:boolean, false) # we only care about the gate id
-    _clear_gate(flag_name, gate)
+  defp do_clear(flag_name, [boolean: true]) do
+    gate = Gate.new(:boolean, false)
+    do_clear_gate(flag_name, gate)
   end
 
-  def clear(flag_name, [for_actor: nil]) do
-    clear(flag_name)
+  defp do_clear(flag_name, [for_actor: nil]) do
+    do_clear(flag_name, [])
   end
 
-  def clear(flag_name, [for_actor: actor]) when is_atom(flag_name) do
-    gate = Gate.new(:actor, actor, false) # we only care about the gate id
-    _clear_gate(flag_name, gate)
+  defp do_clear(flag_name, [for_actor: actor]) do
+    gate = Gate.new(:actor, actor, false)
+    do_clear_gate(flag_name, gate)
   end
 
-  def clear(flag_name, [for_group: nil]) do
-    clear(flag_name)
+  defp do_clear(flag_name, [for_group: nil]) do
+    do_clear(flag_name, [])
   end
 
-  def clear(flag_name, [for_group: group_name]) when is_atom(flag_name) do
-    gate = Gate.new(:group, group_name, false) # we only care about the gate id
-    _clear_gate(flag_name, gate)
+  defp do_clear(flag_name, [for_group: group_name]) do
+    gate = Gate.new(:group, group_name, false)
+    do_clear_gate(flag_name, gate)
   end
 
-  def clear(flag_name, [for_percentage: true]) do
-    gate = Gate.new(:percentage_of_time, 0.5) # we only care about the gate id
-    _clear_gate(flag_name, gate)
+  defp do_clear(flag_name, [for_percentage: true]) do
+    gate = Gate.new(:percentage_of_time, 0.5)
+    do_clear_gate(flag_name, gate)
   end
 
-  defp _clear_gate(flag_name, gate) do
+  defp do_clear_gate(flag_name, gate) do
     case @store.delete(flag_name, gate) do
       {:ok, _flag} -> :ok
       error -> error
@@ -493,14 +547,18 @@ defmodule FunWithFlags do
   Returns `{:ok, binary}` containing all flags serialized with Erlang Term Format.
   The binary includes metadata (version, timestamp) and can be imported via `import_flags/2`.
 
+  ## Options
+
+    * `:user_id` - the user performing the export (for audit logging)
+
   ## Example
 
       {:ok, binary} = FunWithFlags.export_flags()
       File.write!("backup.etf", binary)
 
   """
-  @spec export_flags() :: {:ok, binary()} | {:error, any()}
-  def export_flags do
+  @spec export_flags(keyword()) :: {:ok, binary()} | {:error, any()}
+  def export_flags(opts \\ []) do
     case all_flags() do
       {:ok, flags} ->
         data = %{
@@ -517,6 +575,12 @@ defmodule FunWithFlags do
           metadata
         )
 
+        flag_names = Enum.map(flags, & to_string(&1.name))
+        maybe_audit_log(:export, :_bulk_operation,
+          user_id: Keyword.get(opts, :user_id),
+          operation_metadata: %{flag_count: length(flags), flag_names: flag_names}
+        )
+
         {:ok, binary}
       {:error, reason} ->
         {:error, reason}
@@ -531,6 +595,10 @@ defmodule FunWithFlags do
 
   - `:clear_and_import` - Deletes all existing flags, then imports (destructive!)
   - `:import_and_overwrite` - Imports flags, overwriting any that exist (safe default)
+
+  ## Options
+
+    * `:user_id` - the user performing the import (for audit logging)
 
   ## Validation
 
@@ -549,9 +617,9 @@ defmodule FunWithFlags do
       {:ok, 42} = FunWithFlags.import_flags(binary, :clear_and_import)
 
   """
-  @spec import_flags(binary(), :clear_and_import | :import_and_overwrite) ::
+  @spec import_flags(binary(), :clear_and_import | :import_and_overwrite, keyword()) ::
           {:ok, imported_count :: non_neg_integer()} | {:error, String.t()}
-  def import_flags(binary, mode) when mode in [:clear_and_import, :import_and_overwrite] do
+  def import_flags(binary, mode, opts \\ []) when mode in [:clear_and_import, :import_and_overwrite] do
     if System.get_env("APP_ENV") == "dev" do
       with {:ok, data} <- validate_import_binary(binary),
            :ok <- validate_flag_count(data.flags),
@@ -568,6 +636,12 @@ defmodule FunWithFlags do
           [:fun_with_flags, :import_flags],
           %{count: metadata.flag_count},
           %{mode: metadata.mode}
+        )
+
+        flag_names = Enum.map(data.flags, & to_string(&1.name))
+        maybe_audit_log(:import, :_bulk_operation,
+          user_id: Keyword.get(opts, :user_id),
+          operation_metadata: %{mode: to_string(mode), flag_count: length(flags), flag_names: flag_names}
         )
 
         {:ok, length(flags)}
@@ -677,6 +751,47 @@ defmodule FunWithFlags do
   end
 
 
+  @doc """
+  Lists audit log entries with optional filtering and pagination.
+
+  ## Options
+
+    * `:flag_name` - partial match on flag name (case-insensitive)
+    * `:page` - page number (1-based, default 1)
+    * `:per_page` - results per page (default 25, max 100)
+
+  Returns `{:ok, %{records: [...], total: int, page: int, per_page: int, total_pages: int}}`
+  or `{:error, :audit_log_not_available}` if audit logging is not configured.
+  """
+  @spec audit_log_entries(keyword()) :: {:ok, map()} | {:error, any()}
+  def audit_log_entries(opts \\ []) do
+    if audit_log_query_available?() do
+      FunWithFlags.AuditLog.list(opts)
+    else
+      {:error, :audit_log_not_available}
+    end
+  end
+
+  @doc """
+  Lists audit log entries for a specific flag with pagination.
+
+  ## Options
+
+    * `:page` - page number (1-based, default 1)
+    * `:per_page` - results per page (default 25, max 100)
+
+  Returns `{:ok, %{records: [...], total: int, page: int, per_page: int, total_pages: int}}`
+  or `{:error, :audit_log_not_available}` if audit logging is not configured.
+  """
+  @spec audit_log_entries_for_flag(String.t(), keyword()) :: {:ok, map()} | {:error, any()}
+  def audit_log_entries_for_flag(flag_name, opts \\ []) do
+    if audit_log_query_available?() do
+      FunWithFlags.AuditLog.list_for_flag(flag_name, opts)
+    else
+      {:error, :audit_log_not_available}
+    end
+  end
+
   defp verify(flag) do
     {:ok, Flag.enabled?(flag)}
   end
@@ -691,4 +806,59 @@ defmodule FunWithFlags do
   #
   @doc false
   def compiled_store, do: @store
+
+
+  # --- Audit logging helpers ---
+
+  defp extract_audit_opts(options) do
+    case Keyword.pop(options, :audit) do
+      {nil, gate_opts} -> {[], gate_opts}
+      {audit_opts, gate_opts} -> {audit_opts, gate_opts}
+    end
+  end
+
+  defp gate_for_enable([]), do: Gate.new(:boolean, true)
+  defp gate_for_enable([for_actor: nil]), do: Gate.new(:boolean, true)
+  defp gate_for_enable([for_actor: actor]), do: Gate.new(:actor, actor, true)
+  defp gate_for_enable([for_group: nil]), do: Gate.new(:boolean, true)
+  defp gate_for_enable([for_group: group_name]), do: Gate.new(:group, group_name, true)
+  defp gate_for_enable([for_percentage_of: {:time, ratio}]), do: Gate.new(:percentage_of_time, ratio)
+  defp gate_for_enable([for_percentage_of: {:actors, ratio}]), do: Gate.new(:percentage_of_actors, ratio)
+
+  defp gate_for_disable([]), do: Gate.new(:boolean, false)
+  defp gate_for_disable([for_actor: nil]), do: Gate.new(:boolean, false)
+  defp gate_for_disable([for_actor: actor]), do: Gate.new(:actor, actor, false)
+  defp gate_for_disable([for_group: nil]), do: Gate.new(:boolean, false)
+  defp gate_for_disable([for_group: group_name]), do: Gate.new(:group, group_name, false)
+  defp gate_for_disable([for_percentage_of: {type, ratio}]) do
+    case type do
+      :time -> Gate.new(:percentage_of_time, 1.0 - ratio)
+      :actors -> Gate.new(:percentage_of_actors, 1.0 - ratio)
+    end
+  end
+
+  defp clear_action_and_gate([]), do: {:clear_flag, nil}
+  defp clear_action_and_gate([boolean: true]), do: {:clear_gate, Gate.new(:boolean, false)}
+  defp clear_action_and_gate([for_actor: nil]), do: {:clear_flag, nil}
+  defp clear_action_and_gate([for_actor: actor]), do: {:clear_gate, Gate.new(:actor, actor, false)}
+  defp clear_action_and_gate([for_group: nil]), do: {:clear_flag, nil}
+  defp clear_action_and_gate([for_group: group_name]), do: {:clear_gate, Gate.new(:group, group_name, false)}
+  defp clear_action_and_gate([for_percentage: true]), do: {:clear_gate, Gate.new(:percentage_of_time, 0.5)}
+
+  defp audit_log_available? do
+    Code.ensure_loaded?(FunWithFlags.AuditLog) and
+      function_exported?(FunWithFlags.AuditLog, :log, 3)
+  end
+
+  defp audit_log_query_available? do
+    Code.ensure_loaded?(FunWithFlags.AuditLog) and
+      function_exported?(FunWithFlags.AuditLog, :list, 1)
+  end
+
+  defp maybe_audit_log(action, flag_name, opts) do
+    if audit_log_available?() do
+      FunWithFlags.AuditLog.log(action, flag_name, opts)
+    end
+    :ok
+  end
 end

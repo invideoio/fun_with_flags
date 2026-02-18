@@ -25,6 +25,12 @@ defmodule FunWithFlags.Config do
     ecto_primary_key_type: :id
   ]
 
+  @default_audit_log_config [
+    ecto_table_name: "fun_with_flags_audit_logs",
+    ecto_primary_key_type: :id,
+    user_id_header: "x-user-id"
+  ]
+
   def redis_config do
     case Application.get_env(:fun_with_flags, :redis, []) do
       uri  when is_binary(uri) ->
@@ -86,6 +92,9 @@ defmodule FunWithFlags.Config do
 
   # Used to determine the Ecto table name at compile time.
   @compile_time_persistence_config Application.compile_env(:fun_with_flags, :persistence, [])
+
+  # Used to determine audit log table name at compile time.
+  @compile_time_audit_log_config Application.compile_env(:fun_with_flags, :audit_logs, [])
 
 
   def ecto_table_name_determined_at_compile_time do
@@ -163,6 +172,49 @@ defmodule FunWithFlags.Config do
     cache?() &&
     notifications_adapter() &&
     Keyword.get(notifications_config(), :enabled)
+  end
+
+
+  def audit_log_table_name_determined_at_compile_time do
+    audit_conf = Keyword.merge(
+      @default_audit_log_config,
+      @compile_time_audit_log_config
+    )
+    Keyword.get(audit_conf, :ecto_table_name)
+  end
+
+
+  def audit_log_primary_key_type_determined_at_compile_time do
+    audit_conf = Keyword.merge(
+      @default_audit_log_config,
+      @compile_time_audit_log_config
+    )
+    Keyword.get(audit_conf, :ecto_primary_key_type)
+  end
+
+
+  defp audit_log_config do
+    Keyword.merge(
+      @default_audit_log_config,
+      Application.get_env(:fun_with_flags, :audit_logs, [])
+    )
+  end
+
+
+  def audit_log_enabled? do
+    Keyword.has_key?(audit_log_config(), :repo)
+  end
+
+
+  def audit_log_repo do
+    Keyword.get(audit_log_config(), :repo)
+  end
+
+
+  def audit_log_user_id_header do
+    audit_log_config()
+    |> Keyword.get(:user_id_header)
+    |> String.downcase()
   end
 
 

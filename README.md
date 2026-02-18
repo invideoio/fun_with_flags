@@ -39,6 +39,7 @@ It stores flag information in Redis or a relational DB (PostgreSQL, MySQL, or SQ
   - [Persistence Adapters](#persistence-adapters)
     - [Ecto Multi-tenancy](#ecto-multi-tenancy)
     - [Ecto Custom Primary Key Types](#ecto-custom-primary-key-types)
+  - [Audit Logging](#audit-logging)
   - [PubSub Adapters](#pubsub-adapters)
 * [Extensibility](#extensibility)
   - [Custom Persistence Adapters](#custom-persistence-adapters)
@@ -641,6 +642,99 @@ The library defaults to using an integer (`bigserial`) as the type of the `id` p
 
   1. Set the `:ecto_primary_key_type` configuration option to `:binary_id`.
   2. Use `:binary_id` as the type of the `:id` column in the [provided migration file](https://github.com/tompave/fun_with_flags/blob/master/priv/ecto_repo/migrations/00000000000000_create_feature_flags_table.exs).
+
+### Audit Logging
+
+FunWithFlags supports optional audit logging to track all flag mutations (enable, disable, clear, import, export). When configured, every change is recorded to an Ecto table with details about what changed, who changed it, and the flag's state before destructive operations.
+
+Audit logging is **entirely optional** — if not configured, there is zero overhead.
+
+#### Configuration
+
+```elixir
+config :fun_with_flags, :audit_logs,
+  repo: MyApp.Repo,
+  ecto_table_name: "fun_with_flags_audit_logs",  # optional, this is the default
+  ecto_primary_key_type: :id,                  # optional, defaults to :id (supports :binary_id)
+  user_id_header: "X-User-Id"                  # optional, defaults to "x-user-id"
+```
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `:repo` | Yes (to enable) | — | The Ecto repo to use for audit log storage. Can be different from the persistence repo. |
+| `:ecto_table_name` | No | `"fun_with_flags_audit_logs"` | The database table name for audit logs. |
+| `:ecto_primary_key_type` | No | `:id` | The primary key type (`:id` for bigserial, `:binary_id` for UUID). |
+| `:user_id_header` | No | `"x-user-id"` | The HTTP request header from which the web dashboard extracts the user identifier. |
+
+Audit logging is enabled when `:repo` is set. The repo can be entirely independent from the persistence adapter's repo, allowing you to store audit logs in a separate database.
+
+#### Database Setup
+
+Create a migration in your project and copy the contents of the [provided audit log migration file](priv/ecto_repo/migrations/00000000000001_create_feature_flag_audit_logs_table.exs). If you customized the `ecto_table_name`, adjust the table name in the migration accordingly.
+
+The audit log table has a minimal schema with a flexible JSON `data` column:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigserial / binary_id | Primary key |
+| `flag_name` | string, nullable | The flag name (null for bulk operations like import/export) |
+| `user_id` | string, nullable | The user who performed the action |
+| `data` | jsonb, NOT NULL | JSON object with all event details (see below) |
+| `inserted_at` | utc_datetime, NOT NULL | When the action occurred |
+
+Indexes are created on `flag_name`, `user_id`, and `inserted_at`.
+
+The `data` JSON column always contains `action` and `flag_name`. Depending on the operation, it may also include:
+
+```json
+{
+  "action": "enable",
+  "flag_name": "my_feature",
+  "gate": {"type": "actor", "target": "user:123", "enabled": true},
+  "flag_state_before": {"name": "my_feature", "gates": [...]},
+  "operation_metadata": {"mode": "clear_and_import", "flag_count": 42, "flag_names": [...]}
+}
+```
+
+Using `:map` (jsonb on Postgres) for the data column. If using MySQL or SQLite, change it to `:text` in your migration and use `:string` in the schema.
+
+#### Usage with the Elixir API
+
+All public API functions (`enable/2`, `disable/2`, `clear/2`) accept an optional `audit:` keyword with a `:user_id` key:
+
+```elixir
+# Without audit context (user_id will be nil in the log)
+FunWithFlags.enable(:my_feature)
+
+# With audit context
+FunWithFlags.enable(:my_feature, audit: [user_id: "user_123"])
+FunWithFlags.disable(:my_feature, for_actor: some_actor, audit: [user_id: "admin_1"])
+FunWithFlags.clear(:my_feature, for_group: "beta", audit: [user_id: "admin_1"])
+
+# Import/export accept user_id as a direct keyword option
+FunWithFlags.export_flags(user_id: "admin_1")
+FunWithFlags.import_flags(binary, :import_and_overwrite, user_id: "admin_1")
+```
+
+#### Usage with the Web Dashboard
+
+When the `FunWithFlags.UI` web dashboard is used, the user identifier is automatically extracted from the HTTP request header specified by `:user_id_header`. The host application is responsible for setting this header (e.g., via an authentication middleware or reverse proxy).
+
+For example, if your reverse proxy or authentication layer sets `X-User-Id`:
+
+```elixir
+config :fun_with_flags, :audit_logs,
+  repo: MyApp.Repo,
+  user_id_header: "X-User-Id"
+```
+
+All flag changes made through the dashboard will automatically include the user ID in the audit log.
+
+#### Behaviour
+
+- **Best-effort**: Audit log failures (e.g., database errors) are logged as warnings but never cause the original flag operation to fail.
+- **State capture on delete**: When a flag or gate is cleared, the full flag state (all gates) is captured _before_ the deletion and stored in the `data` JSON under `flag_state_before`.
+- **Bulk operations**: Import and export operations create a single audit log entry with `flag_name` set to `"_bulk_operation"` and details (mode, flag count, flag names) stored in `data` under `operation_metadata`.
 
 ### PubSub Adapters
 
