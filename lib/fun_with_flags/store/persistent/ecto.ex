@@ -16,6 +16,7 @@ defmodule FunWithFlags.Store.Persistent.Ecto do
 
   @mysql_lock_timeout_s 3
   @query_opts [fun_with_flags: true]
+  @created_at_key {__MODULE__, :has_created_at_column}
 
 
   @impl true
@@ -229,11 +230,15 @@ defmodule FunWithFlags.Store.Persistent.Ecto do
 
   @impl true
   def all_flags do
+    repo = ecto_repo()
+
     flags =
       Record
-      |> ecto_repo().all(@query_opts)
+      |> repo.all(@query_opts)
       |> Enum.group_by(&(&1.flag_name))
       |> Enum.map(fn ({name, records}) -> deserialize(name, records) end)
+
+    flags = attach_created_at_timestamps(repo, flags)
     {:ok, flags}
   rescue
     e in [Ecto.QueryError] -> {:error, e}
@@ -320,6 +325,7 @@ defmodule FunWithFlags.Store.Persistent.Ecto do
   defp handle_write(result, flag_name) do
     case result do
       {:ok, %Record{}} ->
+        set_created_at(flag_name)
         get(flag_name) # {:ok, flag}
       {:error, bad_changeset} ->
         {:error, bad_changeset.errors}
@@ -377,10 +383,126 @@ defmodule FunWithFlags.Store.Persistent.Ecto do
       ] ++ @query_opts
     )
 
+    # Set created_at for all imported flags (only if not already set)
+    Enum.each(flag_gate_tuples, fn {name, _gates} ->
+      set_created_at(name)
+    end)
+
     # Convert back to Flag structs
     Enum.map(flag_gate_tuples, fn {name, gates} ->
       %FunWithFlags.Flag{name: name, gates: gates}
     end)
+  end
+
+
+
+  # --- created_at column support (backwards compatible) ---
+  #
+  # The created_at column is optional. If the user has run the migration,
+  # we use it. If not, everything works as before — created_at is simply nil.
+  # Detection is cached in :persistent_term so the check query runs at most once.
+
+  defp has_created_at_column? do
+    case :persistent_term.get(@created_at_key, :not_checked) do
+      :not_checked ->
+        result = detect_created_at_column()
+        :persistent_term.put(@created_at_key, result)
+        result
+      val ->
+        val
+    end
+  end
+
+  defp detect_created_at_column do
+    table = Record.__schema__(:source)
+    repo = ecto_repo()
+
+    case db_type(repo) do
+      :postgres ->
+        case Ecto.Adapters.SQL.query(repo,
+          "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = 'created_at'",
+          [table]
+        ) do
+          {:ok, %{num_rows: n}} when n > 0 -> true
+          _ -> false
+        end
+
+      :mysql ->
+        case Ecto.Adapters.SQL.query(repo,
+          "SELECT column_name FROM information_schema.columns WHERE table_name = ? AND column_name = 'created_at'",
+          [table]
+        ) do
+          {:ok, %{num_rows: n}} when n > 0 -> true
+          _ -> false
+        end
+
+      :sqlite ->
+        case Ecto.Adapters.SQL.query(repo, "PRAGMA table_info(#{table})", []) do
+          {:ok, %{rows: rows}} ->
+            Enum.any?(rows, fn row -> Enum.at(row, 1) == "created_at" end)
+          _ ->
+            false
+        end
+    end
+  rescue
+    _ -> false
+  end
+
+  # Only sets created_at for rows where it is NULL (i.e. first creation).
+  defp set_created_at(flag_name) do
+    if has_created_at_column?() do
+      table = Record.__schema__(:source)
+      name_string = to_string(flag_name)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      repo = ecto_repo()
+
+      case db_type(repo) do
+        :postgres ->
+          Ecto.Adapters.SQL.query(repo,
+            "UPDATE #{table} SET created_at = $1 WHERE flag_name = $2 AND created_at IS NULL",
+            [now, name_string]
+          )
+        :mysql ->
+          Ecto.Adapters.SQL.query(repo,
+            "UPDATE #{table} SET created_at = ? WHERE flag_name = ? AND created_at IS NULL",
+            [now, name_string]
+          )
+        :sqlite ->
+          Ecto.Adapters.SQL.query(repo,
+            "UPDATE #{table} SET created_at = ?1 WHERE flag_name = ?2 AND created_at IS NULL",
+            [now, name_string]
+          )
+      end
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp attach_created_at_timestamps(repo, flags) do
+    if has_created_at_column?() do
+      table = Record.__schema__(:source)
+
+      case Ecto.Adapters.SQL.query(repo,
+        "SELECT flag_name, MIN(created_at) FROM #{table} GROUP BY flag_name", []
+      ) do
+        {:ok, %{rows: rows}} ->
+          timestamps = Map.new(rows, fn [name, ts] -> {name, ts} end)
+
+          Enum.map(flags, fn flag ->
+            case Map.get(timestamps, to_string(flag.name)) do
+              nil -> flag
+              ts -> %{flag | created_at: ts}
+            end
+          end)
+
+        _ ->
+          flags
+      end
+    else
+      flags
+    end
+  rescue
+    _ -> flags
   end
 
 end
