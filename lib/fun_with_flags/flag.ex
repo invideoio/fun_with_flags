@@ -7,14 +7,14 @@ defmodule FunWithFlags.Flag do
 
   alias FunWithFlags.Gate
 
-  defstruct [name: nil, gates: []]
-  @type t :: %FunWithFlags.Flag{name: atom, gates: [FunWithFlags.Gate.t]}
+  defstruct [name: nil, gates: [], created_at: nil]
+  @type t :: %FunWithFlags.Flag{name: atom, gates: [FunWithFlags.Gate.t], created_at: DateTime.t() | nil}
   @typep options :: Keyword.t
 
 
   @doc false
-  def new(name, gates \\ []) when is_atom(name) do
-    %__MODULE__{name: name, gates: gates}
+  def new(name, gates \\ [], created_at \\ nil) when is_atom(name) do
+    %__MODULE__{name: name, gates: gates, created_at: created_at}
   end
 
 

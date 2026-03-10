@@ -460,12 +460,12 @@ defmodule FunWithFlags.Store.Persistent.EctoTest do
       {:ok, result} = PersiEcto.all_flags()
       assert 3 = length(result)
 
-      for flag <- [
+      for expected <- [
         %Flag{name: name1, gates: [g_1a, g_1b, g_1c]},
         %Flag{name: name2, gates: [g_2a, g_2b]},
         %Flag{name: name3, gates: [g_3a]}
       ] do
-        assert flag in result
+        assert Enum.any?(result, fn f -> f.name == expected.name and f.gates == expected.gates end)
       end
     end
   end

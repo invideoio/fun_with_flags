@@ -781,13 +781,13 @@ defmodule FunWithFlagsTest do
       {:ok, result} = FunWithFlags.all_flags()
       assert 4 = length(result)
 
-      for flag <- [
+      for expected <- [
         %Flag{name: name1, gates: [Gate.new(:boolean, true)]},
         %Flag{name: name2, gates: [Gate.new(:boolean, false)]},
         %Flag{name: name3, gates: [Gate.new(:actor, actor, true)]},
         %Flag{name: name4, gates: [Gate.new(:percentage_of_time, 0.9)]},
       ] do
-        assert flag in result
+        assert Enum.any?(result, fn f -> f.name == expected.name and f.gates == expected.gates end)
       end
 
       FunWithFlags.clear(name1)
@@ -795,12 +795,12 @@ defmodule FunWithFlagsTest do
       {:ok, result} = FunWithFlags.all_flags()
       assert 3 = length(result)
 
-      for flag <- [
+      for expected <- [
         %Flag{name: name2, gates: [Gate.new(:boolean, false)]},
         %Flag{name: name3, gates: [Gate.new(:actor, actor, true)]},
         %Flag{name: name4, gates: [Gate.new(:percentage_of_time, 0.9)]},
       ] do
-        assert flag in result
+        assert Enum.any?(result, fn f -> f.name == expected.name and f.gates == expected.gates end)
       end
 
       FunWithFlags.clear(name4)
@@ -808,11 +808,11 @@ defmodule FunWithFlagsTest do
       {:ok, result} = FunWithFlags.all_flags()
       assert 2 = length(result)
 
-      for flag <- [
+      for expected <- [
         %Flag{name: name2, gates: [Gate.new(:boolean, false)]},
         %Flag{name: name3, gates: [Gate.new(:actor, actor, true)]},
       ] do
-        assert flag in result
+        assert Enum.any?(result, fn f -> f.name == expected.name and f.gates == expected.gates end)
       end
     end
   end
